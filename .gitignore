@@ -22,3 +22,24 @@ Thumbs.db
 .claude/
 
 .tmp-ai-drfic/
+# Entornos y secretos
+.env
+.env.local
+.env.*.local
+
+# Dependencias y builds
+node_modules/
+dist/
+build/
+coverage/
+
+# Cache de herramientas
+.vite/
+projects/pwa/inversions_app/.vite/
+
+# Carpetas duplicadas accidentales
+projects/projects/
+
+# Opcional: configuración Diana/Speckit si no la quieres subir
+.drfic/
+.specify/

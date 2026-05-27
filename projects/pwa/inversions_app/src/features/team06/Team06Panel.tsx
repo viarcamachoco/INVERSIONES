@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  getTeam06MarketSnapshot,
   getTeam06NewsConfluence,
   getTeam06RegulatoryContext,
   getTeam06SpreadDemo,
+  type Team06MarketSnapshot,
   type Team06NewsResponse,
   type Team06RegulatoryResponse,
   type Team06SpreadMetrics,
@@ -22,6 +24,19 @@ function formatPct(value?: number): string {
 function formatMoney(value?: number): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/D";
   return `$${value.toFixed(2)}`;
+}
+
+function trendLabel(trend?: string): string {
+  switch (trend) {
+    case "UPTREND":
+      return "Alcista";
+    case "DOWNTREND":
+      return "Bajista";
+    case "RANGE":
+      return "Rango";
+    default:
+      return "Desconocida";
+  }
 }
 
 function sentimentBadge(sentiment?: string): React.CSSProperties {
@@ -49,6 +64,29 @@ function SmallMetric({ label, value }: { label: string; value: React.ReactNode }
     <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "0.5rem" }}>
       <div style={{ color: "var(--color-text-muted)", fontSize: "0.68rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
       <div style={{ fontWeight: 700, marginTop: "0.15rem" }}>{value}</div>
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, value, helper }: { label: string; value: React.ReactNode; helper?: string }) {
+  return (
+    <div>
+      <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>{label}</label>
+      <div style={{
+        width: "100%",
+        minHeight: "34px",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--color-surface-raised)",
+        color: "var(--color-text)",
+        display: "flex",
+        alignItems: "center",
+        padding: "0 0.65rem",
+        fontWeight: 700
+      }}>
+        {value}
+      </div>
+      {helper ? <div style={{ marginTop: "0.2rem", color: "var(--color-text-muted)", fontSize: "0.68rem" }}>{helper}</div> : null}
     </div>
   );
 }
@@ -87,9 +125,8 @@ function SpreadCard({ title, metrics }: { title: string; metrics?: Team06SpreadM
 
 export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
   const [localSymbol, setLocalSymbol] = useState(symbol);
-  const [currentPrice, setCurrentPrice] = useState(200);
   const [putCallRatio, setPutCallRatio] = useState(0.85);
-  const [trend, setTrend] = useState("UPTREND");
+  const [marketSnapshot, setMarketSnapshot] = useState<Team06MarketSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [news, setNews] = useState<Team06NewsResponse | null>(null);
@@ -100,35 +137,26 @@ export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
     setLocalSymbol(symbol);
   }, [symbol]);
 
-  const technicalLevels = useMemo(() => {
-    const support1 = Math.max(1, Math.round(currentPrice * 0.95));
-    const support2 = Math.max(1, Math.round(currentPrice * 0.9));
-    const resistance1 = Math.round(currentPrice * 1.05);
-    const resistance2 = Math.round(currentPrice * 1.1);
-
-    return {
-      supports: `${support1},${support2}`,
-      resistances: `${resistance1},${resistance2}`
-    };
-  }, [currentPrice]);
-
   const refreshTeam06 = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const snapshot = await getTeam06MarketSnapshot({ symbol: localSymbol, timeframe });
+      setMarketSnapshot(snapshot);
+
       const [newsResult, regulatoryResult, spreadResult] = await Promise.all([
         getTeam06NewsConfluence({
           symbol: localSymbol,
           timeframe,
-          currentPrice,
-          supports: technicalLevels.supports,
-          resistances: technicalLevels.resistances,
-          trend,
+          currentPrice: snapshot.currentPrice,
+          supports: snapshot.supports.join(","),
+          resistances: snapshot.resistances.join(","),
+          trend: snapshot.trend,
           limit: 5
         }),
         getTeam06RegulatoryContext({ symbol: localSymbol, putCallRatio }),
-        getTeam06SpreadDemo({ symbol: localSymbol, underlyingPrice: currentPrice })
+        getTeam06SpreadDemo({ symbol: localSymbol, underlyingPrice: snapshot.currentPrice })
       ]);
 
       setNews(newsResult);
@@ -139,11 +167,7 @@ export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
     } finally {
       setLoading(false);
     }
-  }, [currentPrice, localSymbol, putCallRatio, technicalLevels.resistances, technicalLevels.supports, timeframe, trend]);
-
-  // La consulta NO se dispara al cambiar inputs.
-  // Esto evita saturar el backend y caer en 429 mientras el usuario escribe.
-  // Para consultar de nuevo, usa el botón "Actualizar TEAM-06".
+  }, [localSymbol, putCallRatio, timeframe]);
 
   const articles = news?.articles ?? news?.events ?? [];
 
@@ -154,6 +178,9 @@ export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
           <h2>Panel TEAM-06</h2>
           <p style={{ margin: "0.25rem 0 0", color: "var(--color-text-muted)", fontSize: "0.85rem" }}>
             Noticias, correlación técnica, contexto institucional y spreads de opciones.
+          </p>
+          <p style={{ margin: "0.25rem 0 0", color: "var(--color-text-muted)", fontSize: "0.75rem" }}>
+            Precio y tendencia se obtienen de datos reales de Yahoo Finance. Put/Call queda manual hasta conectar una API de opciones real.
           </p>
         </div>
         <button className="btn-primary" onClick={() => void refreshTeam06()} disabled={loading}>
@@ -166,23 +193,12 @@ export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
           <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>Símbolo</label>
           <input value={localSymbol} onChange={(event) => setLocalSymbol(event.target.value.toUpperCase())} />
         </div>
+        <ReadOnlyField label="Precio actual real" value={marketSnapshot ? `${formatMoney(marketSnapshot.currentPrice)} ${marketSnapshot.currency ?? ""}` : "N/D"} helper={marketSnapshot ? `Fuente ${marketSnapshot.source} · ${marketSnapshot.marketTime ?? marketSnapshot.generatedAt}` : "Se consulta en Yahoo Finance con el botón"} />
         <div>
-          <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>Precio actual</label>
-          <input type="number" value={currentPrice} onChange={(event) => setCurrentPrice(Number(event.target.value))} />
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>Put/Call ratio</label>
+          <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>Put/Call ratio manual</label>
           <input type="number" step="0.05" value={putCallRatio} onChange={(event) => setPutCallRatio(Number(event.target.value))} />
         </div>
-        <div>
-          <label style={{ display: "block", fontSize: "0.72rem", color: "var(--color-text-muted)", marginBottom: "0.25rem", fontWeight: 700 }}>Tendencia</label>
-          <select value={trend} onChange={(event) => setTrend(event.target.value)}>
-            <option value="UPTREND">Alcista</option>
-            <option value="DOWNTREND">Bajista</option>
-            <option value="RANGE">Rango</option>
-            <option value="UNKNOWN">Desconocida</option>
-          </select>
-        </div>
+        <ReadOnlyField label="Tendencia real calculada" value={trendLabel(marketSnapshot?.trend)} helper={marketSnapshot ? `Soportes ${marketSnapshot.supports.join(", ")} · Resistencias ${marketSnapshot.resistances.join(", ")}` : "Se calcula con velas reales de Yahoo Finance"} />
       </div>
 
       {error ? (
@@ -252,7 +268,7 @@ export function Team06Panel({ symbol, timeframe }: Team06PanelProps) {
         <section style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", padding: "0.85rem", display: "grid", gap: "0.7rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
             <h3 style={{ margin: 0 }}>Spreads</h3>
-            <span style={{ color: "var(--color-text-muted)", fontSize: "0.75rem" }}>Demo backend</span>
+            <span style={{ color: "var(--color-text-muted)", fontSize: "0.75rem" }}>Con precio real</span>
           </div>
           <SpreadCard title="Debit Spread" metrics={spreads?.debit} />
           <SpreadCard title="Credit Spread" metrics={spreads?.credit} />

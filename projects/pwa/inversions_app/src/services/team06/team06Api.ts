@@ -86,6 +86,31 @@ export interface Team06SpreadDemoResponse {
   generatedAt: string;
 }
 
+export interface Team06RealMarketCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+export interface Team06MarketSnapshot {
+  symbol: string;
+  timeframe: string;
+  currentPrice: number;
+  trend: "UPTREND" | "DOWNTREND" | "RANGE" | "UNKNOWN";
+  supports: number[];
+  resistances: number[];
+  source: string;
+  isRealMarketData: boolean;
+  currency?: string;
+  exchangeName?: string;
+  marketTime?: string;
+  generatedAt: string;
+  candles?: Team06RealMarketCandle[];
+}
+
 function buildQuery(params: Record<string, string | number | undefined>): string {
   const query = new URLSearchParams();
 
@@ -110,6 +135,20 @@ async function getJson<T>(url: string): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+export async function getTeam06MarketSnapshot(params: {
+  symbol: string;
+  timeframe?: string;
+}): Promise<Team06MarketSnapshot> {
+  const query = buildQuery({
+    symbol: params.symbol,
+    timeframe: params.timeframe,
+    range: "3mo",
+    interval: "1d"
+  });
+
+  return getJson<Team06MarketSnapshot>(`/api/news/market-snapshot?${query}`);
 }
 
 export async function getTeam06NewsConfluence(params: {

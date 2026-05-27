@@ -1,0 +1,1 @@
+export { newsConfluenceRouter } from "./newsConfluence";

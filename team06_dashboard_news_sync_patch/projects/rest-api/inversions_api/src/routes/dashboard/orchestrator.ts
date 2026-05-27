@@ -6,12 +6,26 @@ import {
 } from "../../modules/signals/confluenceEngine";
 import { sourceConfigRegistry, type SourceConfig } from "../../modules/signals/sourceConfig";
 import { evaluateNewsImpact } from "../../modules/news/newsImpactEngine";
+import type { NewsQueryParams } from "../../modules/news/newsContract";
 
 interface DashboardQuery {
   instruments?: string;
   timeframe?: string;
   cores?: string;
 }
+
+const COMPANY_NAMES_BY_TICKER: Record<string, string> = {
+  AAPL: "Apple Inc",
+  MSFT: "Microsoft Corporation",
+  NVDA: "NVIDIA Corporation",
+  TSLA: "Tesla Inc",
+  AMZN: "Amazon.com Inc",
+  GOOGL: "Alphabet Inc",
+  GOOG: "Alphabet Inc",
+  META: "Meta Platforms Inc",
+  SPY: "SPDR S&P 500 ETF Trust",
+  QQQ: "Invesco QQQ Trust"
+};
 
 function buildFallbackSources(): SourceConfig[] {
   return [
@@ -39,9 +53,30 @@ function filterSourcesByQuery(sources: SourceConfig[], cores?: string): SourceCo
   }));
 }
 
-async function buildVerdicts(instrument: string): Promise<SourceVerdict[]> {
+function buildNewsQueryForDashboard(instrument: string, timeframe?: string): NewsQueryParams {
+  const symbol = instrument.trim().toUpperCase();
+
+  return {
+    instrument: {
+      ticker: symbol,
+      companyName: COMPANY_NAMES_BY_TICKER[symbol]
+    },
+    periods: {
+      timeframe
+    },
+    limit: 8,
+    includeFallback: false
+  };
+}
+
+async function buildNewsVerdict(instrument: string, timeframe?: string): Promise<SourceVerdict> {
+  const newsImpact = await evaluateNewsImpact(buildNewsQueryForDashboard(instrument, timeframe), 8);
+  return newsImpact.sourceVerdict;
+}
+
+async function buildVerdicts(instrument: string, timeframe?: string): Promise<SourceVerdict[]> {
   const seed = instrument.length;
-const newsImpact = await evaluateNewsImpact(instrument, 6);
+  const newsVerdict = await buildNewsVerdict(instrument, timeframe);
 
   return [
     {
@@ -62,7 +97,7 @@ const newsImpact = await evaluateNewsImpact(instrument, 6);
       confidence: 0.58,
       rationale: "Flujo institucional en rango favorable"
     },
-    newsImpact.sourceVerdict,
+    newsVerdict,
     {
       sourceId: "ai",
       verdict: "BUY",
@@ -97,7 +132,7 @@ dashboardOrchestratorRouter.get("/orchestrator", authContextMiddleware, async (r
     const instrumentVerdicts = await Promise.all(
       parsedInstruments.map(async (instrument) => ({
         instrument,
-        verdicts: await buildVerdicts(instrument)
+        verdicts: await buildVerdicts(instrument, timeframe)
       }))
     );
 

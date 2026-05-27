@@ -137,7 +137,7 @@ function articleMentionsInstrument(article: NormalizedNewsArticle, query: NewsQu
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const PROVIDER_MIN_INTERVAL_MS = 1_000;
 const cache = new Map<string, { expiresAt: number; data: NewsDataServiceResult }>();
-const lastProviderCall = new Map<NewsProviderId, number>();
+const lastProviderCall = new Map<string, number>();
 let secTickerCache: Map<string, SecCompanyTickerItem> | null = null;
 
 function nowIso(): string {
@@ -236,13 +236,17 @@ function buildDiagnostic(
   };
 }
 
-function canCallProvider(provider: NewsProviderId): boolean {
-  const last = lastProviderCall.get(provider) ?? 0;
+function providerCallKey(provider: NewsProviderId, symbol?: string): string {
+  return `${provider}:${symbol?.trim().toUpperCase() || "GLOBAL"}`;
+}
+
+function canCallProvider(provider: NewsProviderId, symbol?: string): boolean {
+  const last = lastProviderCall.get(providerCallKey(provider, symbol)) ?? 0;
   return Date.now() - last >= PROVIDER_MIN_INTERVAL_MS;
 }
 
-function markProviderCall(provider: NewsProviderId): void {
-  lastProviderCall.set(provider, Date.now());
+function markProviderCall(provider: NewsProviderId, symbol?: string): void {
+  lastProviderCall.set(providerCallKey(provider, symbol), Date.now());
 }
 
 async function fetchJson<T>(url: string, headers?: Record<string, string>, timeoutMs = 5_000): Promise<T> {
@@ -299,12 +303,13 @@ function rateLimited(provider: NewsProviderId): ProviderFetchResult {
 
 async function withProviderGuard(
   provider: NewsProviderId,
+  symbol: string | undefined,
   run: () => Promise<NormalizedNewsArticle[]>
 ): Promise<ProviderFetchResult> {
-  if (!canCallProvider(provider)) return rateLimited(provider);
+  if (!canCallProvider(provider, symbol)) return rateLimited(provider);
 
   const startedAt = Date.now();
-  markProviderCall(provider);
+  markProviderCall(provider, symbol);
 
   try {
     const articles = await run();
@@ -332,7 +337,7 @@ async function fetchYahooFinance(query: NewsQueryParams): Promise<ProviderFetchR
   const symbol = query.instrument.ticker;
   const limit = clampLimit(query.limit);
 
-  return withProviderGuard("yahooFinance", async () => {
+  return withProviderGuard("yahooFinance", symbol, async () => {
     const params = new URLSearchParams({
       q: symbol,
       quotesCount: "0",
@@ -371,7 +376,7 @@ async function fetchFinnhub(query: NewsQueryParams): Promise<ProviderFetchResult
   const from = query.periods?.from?.slice(0, 10) ?? new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
   const to = query.periods?.to?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
 
-  return withProviderGuard("finnhub", async () => {
+  return withProviderGuard("finnhub", symbol, async () => {
     const params = new URLSearchParams({ symbol, from, to, token: apiKey });
     const payload = await fetchJson<FinnhubItem[]>(`https://finnhub.io/api/v1/company-news?${params.toString()}`);
 
@@ -400,7 +405,7 @@ async function fetchNewsApi(query: NewsQueryParams): Promise<ProviderFetchResult
   const symbol = query.instrument.ticker;
   const search = query.instrument.companyName ? `${symbol} OR "${query.instrument.companyName}"` : symbol;
 
-  return withProviderGuard("newsapi", async () => {
+  return withProviderGuard("newsapi", symbol, async () => {
     const params = new URLSearchParams({
       q: search,
       language: "en",
@@ -437,7 +442,7 @@ async function fetchAlphaVantage(query: NewsQueryParams): Promise<ProviderFetchR
 
   const symbol = query.instrument.ticker;
 
-  return withProviderGuard("alphaVantage", async () => {
+  return withProviderGuard("alphaVantage", symbol, async () => {
     const params = new URLSearchParams({
       function: "NEWS_SENTIMENT",
       tickers: symbol,
@@ -472,7 +477,7 @@ async function fetchPolygon(query: NewsQueryParams): Promise<ProviderFetchResult
 
   const symbol = query.instrument.ticker;
 
-  return withProviderGuard("polygon", async () => {
+  return withProviderGuard("polygon", symbol, async () => {
     const params = new URLSearchParams({
       "ticker": symbol,
       "limit": String(clampLimit(query.limit)),
@@ -514,7 +519,7 @@ async function getSecTickerMap(): Promise<Map<string, SecCompanyTickerItem>> {
 async function fetchSecEdgar(query: NewsQueryParams): Promise<ProviderFetchResult> {
   const symbol = query.instrument.ticker;
 
-  return withProviderGuard("secEdgar", async () => {
+  return withProviderGuard("secEdgar", symbol, async () => {
     const tickerMap = await getSecTickerMap();
     const company = tickerMap.get(symbol);
     if (!company) return [];
@@ -564,7 +569,7 @@ async function fetchCftcCot(query: NewsQueryParams): Promise<ProviderFetchResult
 
   const symbol = query.instrument.ticker;
 
-  return withProviderGuard("cftcCot", async () => {
+  return withProviderGuard("cftcCot", symbol, async () => {
     const params = new URLSearchParams({
       "$limit": String(clampLimit(query.limit)),
       "$order": "report_date_as_yyyy_mm_dd DESC"

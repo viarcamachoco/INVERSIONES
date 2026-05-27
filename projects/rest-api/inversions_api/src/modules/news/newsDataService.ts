@@ -21,6 +21,7 @@ interface YahooNewsItem {
   publisher?: string;
   link?: string;
   providerPublishTime?: number;
+  relatedTickers?: string[];
 }
 
 interface FinnhubItem {
@@ -76,7 +77,63 @@ const DEFAULT_PROVIDERS: NewsProviderId[] = [
   "cftcCot",
   "yahooFinance"
 ];
+const COMPANY_ALIASES: Record<string, string[]> = {
+  AAPL: ["aapl", "apple", "apple inc"],
+  MSFT: ["msft", "microsoft", "microsoft corp", "microsoft corporation"],
+  NVDA: ["nvda", "nvidia", "nvidia corp", "nvidia corporation"],
+  AMZN: ["amzn", "amazon", "amazon.com"],
+  GOOGL: ["googl", "google", "alphabet"],
+  GOOG: ["goog", "google", "alphabet"],
+  META: ["meta", "facebook", "meta platforms"],
+  TSLA: ["tsla", "tesla"],
+  SPY: ["spy", "spdr", "s&p 500", "spdr s&p 500"],
+  QQQ: ["qqq", "nasdaq 100", "invesco qqq"]
+};
 
+function normalizeText(value?: string): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9&. ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getInstrumentAliases(symbol: string, companyName?: string): string[] {
+  const cleanSymbol = symbol.trim().toUpperCase();
+  const aliases = new Set<string>(COMPANY_ALIASES[cleanSymbol] ?? [cleanSymbol.toLowerCase()]);
+
+  if (companyName) {
+    aliases.add(normalizeText(companyName));
+  }
+
+  return Array.from(aliases).filter(Boolean);
+}
+
+function articleMentionsInstrument(article: NormalizedNewsArticle, query: NewsQueryParams): boolean {
+  const symbol = query.instrument.ticker.trim().toUpperCase();
+  const text = normalizeText(`${article.title} ${article.summary} ${article.source}`);
+
+  const aliases = getInstrumentAliases(symbol, query.instrument.companyName);
+
+  const mentionsByAlias = aliases.some((alias) => {
+    if (alias.length <= 4) {
+      return new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
+    }
+
+    return text.includes(alias);
+  });
+
+  if (mentionsByAlias) return true;
+
+  const raw = article.raw as { relatedTickers?: string[]; tickers?: string[] } | undefined;
+  const relatedTickers = raw?.relatedTickers ?? raw?.tickers ?? [];
+
+  const onlyTickerRelated =
+    relatedTickers.map((ticker) => ticker.toUpperCase()).includes(symbol) &&
+    !/(apple|microsoft|nvidia|tesla|amazon|google|alphabet|meta|facebook)/i.test(article.title);
+
+  return onlyTickerRelated;
+}
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const PROVIDER_MIN_INTERVAL_MS = 1_000;
 const cache = new Map<string, { expiresAt: number; data: NewsDataServiceResult }>();
@@ -657,6 +714,7 @@ export async function fetchNewsData(query: NewsQueryParams): Promise<NewsDataSer
   const providerResults = await Promise.all(providers.map((provider) => runProvider(provider, cleanQuery)));
 
   let articles = deduplicateArticles(providerResults.flatMap((result) => result.articles))
+    .filter((article) => articleMentionsInstrument(article, cleanQuery))
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
     .slice(0, cleanQuery.limit);
 

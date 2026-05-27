@@ -45,7 +45,7 @@ export function getRateLimitStorage(): RateLimitStorage {
 
 export const INDICATORS_BUCKET: RateLimitConfig = {
   windowSeconds: 60,
-  maxRequests: 60,
+  maxRequests: process.env.NODE_ENV === "development" ? 300 : 60,
   bucket: "indicators"
 };
 

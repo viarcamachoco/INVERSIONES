@@ -38,8 +38,8 @@ coverage/
 projects/pwa/inversions_app/.vite/
 
 # Carpetas duplicadas accidentales
-projects/projects/
 
 # Opcional: configuración Diana/Speckit si no la quieres subir
 .drfic/
 .specify/
+# TEAM-06 local cleanup / rutas duplicadas accidentales

@@ -15,6 +15,7 @@ import { IndicatorsMenu } from "./IndicatorsMenu";
 import { RuntimeModeSwitches } from "./RuntimeModeSwitches";
 import { ConfluenceSignalsTable } from "./ConfluenceSignalsTable";
 import { SimulationControlPanel } from "./simulation/SimulationControlPanel";
+import { Team06Panel } from "../team06/Team06Panel";
 import type { ConfluenceSignalRow, SimulationResponse } from "../../services/signals/confluenceTableApi";
 import { useSignalStore } from "../../store/signals";
 
@@ -57,9 +58,9 @@ export function MainDashboard() {
 
   const activeCoreCount = useMemo(() => cores.filter((core) => core.enabled).length, [cores]);
   const activeCoreIds = useMemo(
-  () => cores.filter((core) => core.enabled).map((core) => core.id).join(","),
-  [cores]
-);
+    () => cores.filter((core) => core.enabled).map((core) => core.id).join(","),
+    [cores]
+  );
 
   const refreshDashboard = useCallback(async () => {
     setLoading(true);
@@ -67,10 +68,10 @@ export function MainDashboard() {
 
     try {
       const response = await getDashboardOrchestrator({
-    instruments: instrumentsInput,
-    timeframe,
-    cores: activeCoreIds
-});
+        instruments: instrumentsInput,
+        timeframe,
+        cores: activeCoreIds
+      });
 
       setPayload(response);
       setSelectedSignal(response.cards[0] ?? null);
@@ -80,7 +81,7 @@ export function MainDashboard() {
     } finally {
       setLoading(false);
     }
-}, [instrumentsInput, timeframe, activeCoreIds]);
+  }, [activeCoreIds, instrumentsInput, timeframe]);
 
   // Auto-load on mount
   useEffect(() => {
@@ -254,6 +255,7 @@ export function MainDashboard() {
                     </div>
                   )}
                   <ConfluenceSignalsTable symbol={selectedSymbol} rows={simulationRows} />
+                  <Team06Panel symbol={selectedSymbol} timeframe={timeframe} />
                 </div>
               </div>
             ) : null}

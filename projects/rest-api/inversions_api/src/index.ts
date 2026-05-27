@@ -31,6 +31,8 @@ import { chatExplainRouter } from "./routes/indicators/chatExplain";
 import { confluenceTableRouter } from "./routes/signals/confluenceTable";
 import { simulationRunRouter } from "./routes/simulation/run";
 import { newsConfluenceRouter } from "./routes/news/newsConfluence";
+import { regulatoryInstitutionalContextRouter } from "./routes/news/regulatoryInstitutionalContext";
+import { spreadStrategyRouter } from "./routes/strategies/spreads";
 import { indicatorsRateLimit, chatRateLimit } from "./middleware/indicatorsRateLimit";
 
 const envValidation = validateEnvironment();
@@ -58,6 +60,8 @@ app.use("/api/signals", signalConfluenceRouter);
 app.use("/api/signals", indicatorsRateLimit, confluenceTableRouter);
 app.use("/api/simulation", indicatorsRateLimit, simulationRunRouter);
 app.use("/api/news", indicatorsRateLimit, newsConfluenceRouter);
+app.use("/api/news", indicatorsRateLimit, regulatoryInstitutionalContextRouter);
+app.use("/api/strategies", indicatorsRateLimit, spreadStrategyRouter);
 app.use("/api/dashboard", dashboardOrchestratorRouter);
 app.use("/api/dashboard", confluenceViewPresetsRouter);
 app.use("/api/execution", createApprovalRouter(approvalService));
